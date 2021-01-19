@@ -1,8 +1,13 @@
+import copy
 import multiprocessing
+import time
 
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
+import torch.optim as optim
+from torch.optim import lr_scheduler
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
 
@@ -10,7 +15,7 @@ from torch.utils.data import DataLoader
 class NeuralNetClassifier(nn.Module):
 
     def __init__(self):
-        pass
+        super(NeuralNetClassifier, self).__init__()
 
     def get_data_loader(self, data_dir, batch_size, **transform_params):
         data_transform = self._transform(transform_params)
@@ -26,32 +31,90 @@ class NeuralNetClassifier(nn.Module):
             data_transforms.append(eval(expr))
         return transforms.Compose(data_transforms)
 
+    def train_classifier(self, data_loaders, criterion, optimizer, schedular,
+            num_epochs=25):
+        since = time.time()
+        device = 'cpu'
+        best_model_wts = copy.deepcopy(self.state_dict())
+        best_acc = 0.0
 
-    def train(self, X, y):
-        pass
+        for epoch in range(num_epochs):
+            print('Epoch {}/{}'.format(epoch, num_epochs - 1))
+            print('-' * 10)
 
-    def predict(self, X):
-        pass
+            # Each epoch has a training and validation phase
+            for phase in ['train', 'val']:
+                if phase == 'train':
+                    self.train()  # Set model to training mode
+                else:
+                    self.eval()   # Set model to evaluate mode
+                running_loss = 0.0
+                running_corrects = 0
+
+                # Iterate over data.
+                for inputs, labels in data_loaders[phase]:
+                    inputs = inputs.to(device)
+                    labels = labels.to(device)
+                    inputs = torch.flatten(inputs)
+                    print(inputs[0].shape)
+                    print(len(inputs))
+
+                    # zero the parameter gradients
+                    optimizer.zero_grad()
+
+                    # forward
+                    # track history if only in train
+                    with torch.set_grad_enabled(phase == 'train'):
+                        outputs = self(inputs)
+                        _, preds = torch.max(outputs, 1)
+                        loss = criterion(outputs, labels)
+
+                        # backward + optimize only if in training phase
+                        if phase == 'train':
+                            loss.backward()
+                            optimizer.step()
+
+                    # statistics
+                    running_loss += loss.item() * inputs.size(0)
+                    running_corrects += torch.sum(preds == labels.data)
+                if phase == 'train':
+                    scheduler.step()
+
+                epoch_loss = running_loss / dataset_sizes[phase]
+                epoch_acc = running_corrects.double() / dataset_sizes[phase]
+
+                print('{} Loss: {:.4f} Acc: {:.4f}'.format(
+                    phase, epoch_loss, epoch_acc))
+
+                # deep copy the model
+                if phase == 'val' and epoch_acc > best_acc:
+                    best_acc = epoch_acc
+                    best_model_wts = copy.deepcopy(model.state_dict())
+
+            print()
+
+        time_elapsed = time.time() - since
+        m, s = time_elapsed // 60, time_elapsed % 60
+        print('Training complete in {:.0f}m {:.0f}s'.format(m, s))
+        #print('Best val Acc: {:4f}'.format(best_acc))
+
+        ## load best model weights
+        #model.load_state_dict(best_model_wts)
+        #return model
+
 
 
 class MLP(NeuralNetClassifier):
-    def __init__(self, input_size, output_size, hidden_sizes):
-        super().__init__()
-        assert hidden_sizes, "hidden_sizes is empty" 
-        self.input_fc = nn.Linear(input_size, hidden_sizes[0])
-        self.hidden_fc = nn.ModuleList()
-        for k in range(len(hidden_sizes)-1):
-            self.hidden_fc.append(nn.Linear(hidden_sizes[k], hidden_sizes[k+1]))
-        self.output_fc = nn.Linear(input_size, hidden_sizes[-1])
+    def __init__(self, dims):
+        super(MLP, self).__init__()
+        self.linears = nn.ModuleList()
+        for i in range(len(dims)-1):
+            self.linears.append(nn.Linear(dims[i], dims[i+1]))
 
-    def forward(self):
-        x = F.relu(self.input_fc)
-        for l in hidden_fc:
-            x = F.relu(l)
-        x = F.relu(self.output_fc)
-        return x
-
-
+    def forward(self, x):
+        for i in range(len(self.linears)-1):
+            x = F.relu(self.linears[i](x))
+        return F.softmax(self.linears[-1](x), dim=1)
 
 
 if __name__== '__main__':
@@ -59,15 +122,81 @@ if __name__== '__main__':
     from os import listdir
     from os.path import isfile, join
     from PIL import Image
-    class_dir = 'hymenoptera_data/train'
-    #image_data = []
-    #for filename in listdir(data_dir):
-    #    filename = join(data_dir, filename)
-    #    image = Image.open(filename)
-    #    image_data.append(np.asarray(image))
-    #print(image_data[0].shape)
-    #print(image_data[1].shape)
-    model = MLP()
-    model.load(class_dir, 4, RandomResizedCrop=(224,), ToTensor=(), Normalize = ([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]))
+
+    nn_model = MLP([10, 10, 10])
+
+    data_dir = 'hymenoptera_data/train'
+    train_data_loader = nn_model.get_data_loader(data_dir,
+            batch_size=4,
+            RandomResizedCrop=(224,),
+            RandomHorizontalFlip=(),
+            ToTensor=(),
+            Normalize=([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]))
+
+    data_dir = 'hymenoptera_data/val'
+    val_data_loader = nn_model.get_data_loader(data_dir,
+            batch_size=4,
+            Resize=(256,),
+            CenterCrop=(224,),
+            ToTensor=(),
+            Normalize=([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]))
+
+    data_loaders = {'train': train_data_loader, 'val': val_data_loader}
+    optimizer = optim.Adam(nn_model.parameters())
+    exp_lr_scheduler = lr_scheduler.StepLR(optimizer, step_size=7, gamma=0.1)
+    criterion = nn.CrossEntropyLoss()
+    # nn_model.train_classifier(data_loaders, criterion, optimizer, exp_lr_scheduler)
 
 
+    ROOT = '.data'
+    train_data = datasets.MNIST(root = ROOT, train = True, download = True)
+    mean = train_data.data.float().mean() / 255
+    std = train_data.data.float().std() / 255 
+
+    train_transforms = transforms.Compose([
+                                transforms.RandomRotation(5, fill=(0,)),
+                                transforms.RandomCrop(28, padding = 2),
+                                transforms.ToTensor(),
+                                transforms.Normalize(mean = [mean], std = [std])
+                                          ])
+
+    test_transforms = transforms.Compose([
+                               transforms.ToTensor(),
+                               transforms.Normalize(mean = [mean], std = [std])
+                                         ])
+    
+
+
+    train_data = datasets.MNIST(root = ROOT, 
+                                train = True, 
+                                download = True, 
+                                transform = train_transforms)
+
+    test_data = datasets.MNIST(root = ROOT, 
+                               train = False, 
+                               download = True, 
+                               transform = test_transforms)
+
+    VALID_RATIO = 0.9
+
+    n_train_examples = int(len(train_data) * VALID_RATIO)
+    n_valid_examples = len(train_data) - n_train_examples
+
+    train_data, valid_data = data.random_split(train_data, 
+                                               [n_train_examples, n_valid_examples])
+    
+    valid_data = copy.deepcopy(valid_data)
+    valid_data.dataset.transform = test_transforms
+
+
+    BATCH_SIZE = 64
+
+    train_iterator = data.DataLoader(train_data, 
+                                     shuffle = True, 
+                                     batch_size = BATCH_SIZE)
+
+    valid_iterator = data.DataLoader(valid_data, 
+                                     batch_size = BATCH_SIZE)
+
+    test_iterator = data.DataLoader(test_data, 
+                                    batch_size = BATCH_SIZE)
