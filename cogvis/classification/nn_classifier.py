@@ -14,22 +14,23 @@ from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
 
 
+def training_timer(func):
+    @functools.wraps(func)
+    def wrapper_timer(*args, **kwargs):
+        start_time = time.perf_counter()
+        value = func(*args, **kwargs)
+        end_time = time.perf_counter()
+        time_elapsed = end_time - start_time
+        m, s = time_elapsed // 60, time_elapsed % 60
+        print(f'Finished training in {m:.0f}m {s:.0f}s')
+        return value
+    return wrapper_timer
+
+
 class NeuralNetClassifier(nn.Module):
 
     def __init__(self):
         super(NeuralNetClassifier, self).__init__()
-
-    def timer(func):
-        @functools.wraps(func)
-        def wrapper_timer(*args, **kwargs):
-            start_time = time.perf_counter()
-            value = func(*args, **kwargs)
-            end_time = time.perf_counter()
-            time_elapsed = end_time - start_time
-            m, s = time_elapsed // 60, time_elapsed % 60
-            print(f'{func.__name__!r} complete in {m:.0f}m {s:.0f}s')
-            return value
-        return wrapper_timer
 
     def get_data_loader(self, data_dir, batch_size, **transform_params):
         data_transform = self._transform(transform_params)
@@ -45,9 +46,9 @@ class NeuralNetClassifier(nn.Module):
             data_transforms.append(eval(expr))
         return transforms.Compose(data_transforms)
 
-    @timer
-    def train_classifier(self, data_loaders, criterion, optimizer, scheduler,
-            dataset_sizes, num_epochs=2):
+    @training_timer
+    def train_classifier(self, data_loaders, dataset_sizes, criterion, 
+            optimizer, scheduler, num_epochs=5):
         device = 'cpu'
         best_model_wts = copy.deepcopy(self.state_dict())
         best_acc = 0.0
@@ -111,6 +112,7 @@ class NeuralNetClassifier(nn.Module):
 
 
 class MLP(NeuralNetClassifier):
+
     def __init__(self, dims):
         super(MLP, self).__init__()
         self.linears = nn.ModuleList()
@@ -121,15 +123,42 @@ class MLP(NeuralNetClassifier):
         batch_size = x.shape[0]
         x = x.view(batch_size, -1)
         for i in range(len(self.linears)-1):
-            x = F.relu(self.linears[i](x))
+            x = self.linears[i](x)
+            x = F.relu(x)
         return F.softmax(self.linears[-1](x), dim=1)
+
+
+class CNN(NeuralNetClassifier):
+
+    def __init__(self, conv_dims, linear_dims, kernel_size):
+        # TODO: need to come up with a smarter way of passing func args
+        super(CNN, self).__init__()
+        self.kernel_size = kernel_size
+        self.convs = nn.ModuleList()
+        for i in range(len(conv_dims)-1):
+            conv = nn.Conv2d(conv_dims[i], conv_dims[i+1], kernel_size)
+            self.convs.append(conv)
+        self.linears = nn.ModuleList()
+        for i in range(len(linear_dims)-1):
+            linear = nn.Linear(linear_dims[i], linear_dims[i+1])
+            self.linears.append(linear)
+        
+    def forward(self, x):
+        batch_size = x.shape[0]
+        for i in range(len(self.convs)):
+            x = self.convs[i](x) 
+            x = F.max_pool2d(x, kernel_size=2) #TODO: need to pass in ks
+        x = x.view(batch_size, -1)
+        for i in range(len(self.linears)-1):
+            x = self.linears[i](x)
+            x = F.relu(x)
+        return F.softmax(self.linears[-1](x), dim=1)
+        
+        
 
 
 if __name__== '__main__':
     # Just ignore this - random testing
-    from os import listdir
-    from os.path import isfile, join
-    from PIL import Image
 
     #nn_model = MLP([784, 250, 100, 10])
 
@@ -214,10 +243,8 @@ if __name__== '__main__':
     criterion = nn.CrossEntropyLoss()
     #nn_model.train_mnist(train_iterator, optimizer, criterion)
 
-
     exp_lr_scheduler = lr_scheduler.StepLR(optimizer, step_size=7, gamma=0.1)
-    nn_model.train_classifier(data_loaders, criterion, optimizer, exp_lr_scheduler, dataset_sizes)
-
+    nn_model.train_classifier(data_loaders, dataset_sizes, criterion, optimizer, exp_lr_scheduler)
 
 
 
