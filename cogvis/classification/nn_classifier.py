@@ -1,4 +1,5 @@
 import copy
+import functools
 import multiprocessing
 import time
 
@@ -18,6 +19,18 @@ class NeuralNetClassifier(nn.Module):
     def __init__(self):
         super(NeuralNetClassifier, self).__init__()
 
+    def timer(func):
+        @functools.wraps(func)
+        def wrapper_timer(*args, **kwargs):
+            start_time = time.perf_counter()
+            value = func(*args, **kwargs)
+            end_time = time.perf_counter()
+            time_elapsed = end_time - start_time
+            m, s = time_elapsed // 60, time_elapsed % 60
+            print(f'{func.__name__!r} complete in {m:.0f}m {s:.0f}s')
+            return value
+        return wrapper_timer
+
     def get_data_loader(self, data_dir, batch_size, **transform_params):
         data_transform = self._transform(transform_params)
         dataset = datasets.ImageFolder(root=data_dir, transform=data_transform)
@@ -32,9 +45,9 @@ class NeuralNetClassifier(nn.Module):
             data_transforms.append(eval(expr))
         return transforms.Compose(data_transforms)
 
+    @timer
     def train_classifier(self, data_loaders, criterion, optimizer, scheduler,
-            dataset_sizes, num_epochs=5):
-        since = time.time()
+            dataset_sizes, num_epochs=2):
         device = 'cpu'
         best_model_wts = copy.deepcopy(self.state_dict())
         best_acc = 0.0
@@ -56,10 +69,6 @@ class NeuralNetClassifier(nn.Module):
                 for inputs, labels in data_loaders[phase]:
                     inputs = inputs.to(device)
                     labels = labels.to(device)
-                    #print()
-                    #print('inputs: ', inputs)
-                    #print('labels: ', labels)
-                    #print()
 
                     # zero the parameter gradients
                     optimizer.zero_grad()
@@ -79,6 +88,7 @@ class NeuralNetClassifier(nn.Module):
                     # statistics
                     running_loss += loss.item() * inputs.size(0)
                     running_corrects += torch.sum(preds == labels.data)
+
                 if phase == 'train':
                     scheduler.step()
 
@@ -94,49 +104,10 @@ class NeuralNetClassifier(nn.Module):
                     best_model_wts = copy.deepcopy(self.state_dict())
 
             print()
-
-        time_elapsed = time.time() - since
-        m, s = time_elapsed // 60, time_elapsed % 60
-        print('Training complete in {:.0f}m {:.0f}s'.format(m, s))
         print('Best val Acc: {:4f}'.format(best_acc))
 
-        ## load best model weights
-        #model.load_state_dict(best_model_wts)
-        #return model
-
-    def train_mnist(self, iterator, optimizer, criterion):
-        device='cpu'
-        epoch_loss = 0
-        epoch_acc = 0
-
-        self.train()
-
-        for (x, y) in iterator:
-
-            x = x.to(device)
-            y = y.to(device)
-            print('x: ', x)
-            print('y: ',y)
-
-            optimizer.zero_grad()
-
-            y_pred = self(x)
-            print(y_pred)
-
-            loss = criterion(y_pred, y)
-
-            acc = calculate_accuracy(y_pred, y)
-
-            loss.backward()
-
-            optimizer.step()
-
-            epoch_loss += loss.item()
-            epoch_acc += acc.item()
-
-        return epoch_loss / len(iterator), epoch_acc / len(iterator)
-
-
+        # load best model weights
+        self.load_state_dict(best_model_wts)
 
 
 class MLP(NeuralNetClassifier):
