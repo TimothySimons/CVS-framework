@@ -7,6 +7,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
+import torch.utils.data as data
 from torch.optim import lr_scheduler
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
@@ -31,8 +32,8 @@ class NeuralNetClassifier(nn.Module):
             data_transforms.append(eval(expr))
         return transforms.Compose(data_transforms)
 
-    def train_classifier(self, data_loaders, criterion, optimizer, schedular,
-            num_epochs=25):
+    def train_classifier(self, data_loaders, criterion, optimizer, scheduler,
+            dataset_sizes, num_epochs=5):
         since = time.time()
         device = 'cpu'
         best_model_wts = copy.deepcopy(self.state_dict())
@@ -55,9 +56,10 @@ class NeuralNetClassifier(nn.Module):
                 for inputs, labels in data_loaders[phase]:
                     inputs = inputs.to(device)
                     labels = labels.to(device)
-                    inputs = torch.flatten(inputs)
-                    print(inputs[0].shape)
-                    print(len(inputs))
+                    #print()
+                    #print('inputs: ', inputs)
+                    #print('labels: ', labels)
+                    #print()
 
                     # zero the parameter gradients
                     optimizer.zero_grad()
@@ -89,18 +91,51 @@ class NeuralNetClassifier(nn.Module):
                 # deep copy the model
                 if phase == 'val' and epoch_acc > best_acc:
                     best_acc = epoch_acc
-                    best_model_wts = copy.deepcopy(model.state_dict())
+                    best_model_wts = copy.deepcopy(self.state_dict())
 
             print()
 
         time_elapsed = time.time() - since
         m, s = time_elapsed // 60, time_elapsed % 60
         print('Training complete in {:.0f}m {:.0f}s'.format(m, s))
-        #print('Best val Acc: {:4f}'.format(best_acc))
+        print('Best val Acc: {:4f}'.format(best_acc))
 
         ## load best model weights
         #model.load_state_dict(best_model_wts)
         #return model
+
+    def train_mnist(self, iterator, optimizer, criterion):
+        device='cpu'
+        epoch_loss = 0
+        epoch_acc = 0
+
+        self.train()
+
+        for (x, y) in iterator:
+
+            x = x.to(device)
+            y = y.to(device)
+            print('x: ', x)
+            print('y: ',y)
+
+            optimizer.zero_grad()
+
+            y_pred = self(x)
+            print(y_pred)
+
+            loss = criterion(y_pred, y)
+
+            acc = calculate_accuracy(y_pred, y)
+
+            loss.backward()
+
+            optimizer.step()
+
+            epoch_loss += loss.item()
+            epoch_acc += acc.item()
+
+        return epoch_loss / len(iterator), epoch_acc / len(iterator)
+
 
 
 
@@ -112,6 +147,8 @@ class MLP(NeuralNetClassifier):
             self.linears.append(nn.Linear(dims[i], dims[i+1]))
 
     def forward(self, x):
+        batch_size = x.shape[0]
+        x = x.view(batch_size, -1)
         for i in range(len(self.linears)-1):
             x = F.relu(self.linears[i](x))
         return F.softmax(self.linears[-1](x), dim=1)
@@ -123,80 +160,93 @@ if __name__== '__main__':
     from os.path import isfile, join
     from PIL import Image
 
-    nn_model = MLP([10, 10, 10])
+    #nn_model = MLP([784, 250, 100, 10])
 
-    data_dir = 'hymenoptera_data/train'
-    train_data_loader = nn_model.get_data_loader(data_dir,
-            batch_size=4,
-            RandomResizedCrop=(224,),
-            RandomHorizontalFlip=(),
-            ToTensor=(),
-            Normalize=([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]))
+    #data_dir = 'hymenoptera_data/train'
+    #train_data_loader = nn_model.get_data_loader(data_dir,
+    #        batch_size=4,
+    #        RandomResizedCrop=(224,),
+    #        RandomHorizontalFlip=(),
+    #        ToTensor=(),
+    #        Normalize=([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]))
 
-    data_dir = 'hymenoptera_data/val'
-    val_data_loader = nn_model.get_data_loader(data_dir,
-            batch_size=4,
-            Resize=(256,),
-            CenterCrop=(224,),
-            ToTensor=(),
-            Normalize=([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]))
+    #data_dir = 'hymenoptera_data/val'
+    #val_data_loader = nn_model.get_data_loader(data_dir,
+    #        batch_size=4,
+    #        Resize=(256,),
+    #        CenterCrop=(224,),
+    #        ToTensor=(),
+    #        Normalize=([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]))
 
-    data_loaders = {'train': train_data_loader, 'val': val_data_loader}
-    optimizer = optim.Adam(nn_model.parameters())
-    exp_lr_scheduler = lr_scheduler.StepLR(optimizer, step_size=7, gamma=0.1)
-    criterion = nn.CrossEntropyLoss()
+    #data_loaders = {'train': train_data_loader, 'val': val_data_loader}
+    #optimizer = optim.Adam(nn_model.parameters())
+    #exp_lr_scheduler = lr_scheduler.StepLR(optimizer, step_size=7, gamma=0.1)
+    #criterion = nn.CrossEntropyLoss()
     # nn_model.train_classifier(data_loaders, criterion, optimizer, exp_lr_scheduler)
 
 
+    nn_model = MLP([784, 250, 100, 10])
     ROOT = '.data'
     train_data = datasets.MNIST(root = ROOT, train = True, download = True)
     mean = train_data.data.float().mean() / 255
     std = train_data.data.float().std() / 255 
 
     train_transforms = transforms.Compose([
-                                transforms.RandomRotation(5, fill=(0,)),
-                                transforms.RandomCrop(28, padding = 2),
-                                transforms.ToTensor(),
-                                transforms.Normalize(mean = [mean], std = [std])
-                                          ])
+        transforms.RandomRotation(5, fill=(0,)),
+        transforms.RandomCrop(28, padding = 2),
+        transforms.ToTensor(),
+        transforms.Normalize(mean = [mean], std = [std])
+        ])
 
     test_transforms = transforms.Compose([
-                               transforms.ToTensor(),
-                               transforms.Normalize(mean = [mean], std = [std])
-                                         ])
-    
-
+        transforms.ToTensor(),
+        transforms.Normalize(mean = [mean], std = [std])
+        ])
 
     train_data = datasets.MNIST(root = ROOT, 
-                                train = True, 
-                                download = True, 
-                                transform = train_transforms)
+            train = True, 
+            download = True, 
+            transform = train_transforms)
 
     test_data = datasets.MNIST(root = ROOT, 
-                               train = False, 
-                               download = True, 
-                               transform = test_transforms)
+            train = False, 
+            download = True, 
+            transform = test_transforms)
 
     VALID_RATIO = 0.9
 
     n_train_examples = int(len(train_data) * VALID_RATIO)
     n_valid_examples = len(train_data) - n_train_examples
 
-    train_data, valid_data = data.random_split(train_data, 
-                                               [n_train_examples, n_valid_examples])
-    
+    train_data, valid_data = data.random_split(train_data, [n_train_examples, n_valid_examples])
+
     valid_data = copy.deepcopy(valid_data)
     valid_data.dataset.transform = test_transforms
 
 
-    BATCH_SIZE = 64
+    BATCH_SIZE = 5 
 
     train_iterator = data.DataLoader(train_data, 
-                                     shuffle = True, 
-                                     batch_size = BATCH_SIZE)
+            shuffle = True, 
+            batch_size = BATCH_SIZE)
 
     valid_iterator = data.DataLoader(valid_data, 
-                                     batch_size = BATCH_SIZE)
+            batch_size = BATCH_SIZE)
 
     test_iterator = data.DataLoader(test_data, 
-                                    batch_size = BATCH_SIZE)
+            batch_size = BATCH_SIZE)
+
+    data_loaders = {'train': train_iterator, 'val': valid_iterator}
+    dataset_sizes = {'train': n_train_examples, 'val': n_valid_examples}
+
+    optimizer = optim.Adam(nn_model.parameters())
+    criterion = nn.CrossEntropyLoss()
+    #nn_model.train_mnist(train_iterator, optimizer, criterion)
+
+
+    exp_lr_scheduler = lr_scheduler.StepLR(optimizer, step_size=7, gamma=0.1)
+    nn_model.train_classifier(data_loaders, criterion, optimizer, exp_lr_scheduler, dataset_sizes)
+
+
+
+
