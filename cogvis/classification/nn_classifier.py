@@ -10,108 +10,11 @@ import torch.nn.functional as F
 import torch.optim as optim
 import torch.utils.data as data
 from torch.optim import lr_scheduler
-from torchvision import datasets, transforms
+from torchvision import datasets, models, transforms
 from torch.utils.data import DataLoader
 
 
-def training_timer(func):
-    @functools.wraps(func)
-    def wrapper_timer(*args, **kwargs):
-        start_time = time.perf_counter()
-        value = func(*args, **kwargs)
-        end_time = time.perf_counter()
-        time_elapsed = end_time - start_time
-        m, s = time_elapsed // 60, time_elapsed % 60
-        print(f'Finished training in {m:.0f}m {s:.0f}s')
-        return value
-    return wrapper_timer
-
-
-class NeuralNetClassifier(nn.Module):
-
-    def __init__(self):
-        super(NeuralNetClassifier, self).__init__()
-
-    def get_data_loader(self, data_dir, batch_size, **transform_params):
-        data_transform = self._transform(transform_params)
-        dataset = datasets.ImageFolder(root=data_dir, transform=data_transform)
-        num_procs = multiprocessing.cpu_count() - 1
-        return DataLoader(dataset, batch_size, shuffle=True, 
-                num_workers=num_procs)
-
-    def _transform(self, transform_params):
-        data_transforms = []
-        for k, v in transform_params.items():
-            expr = f"transforms.{k}{v}"
-            data_transforms.append(eval(expr))
-        return transforms.Compose(data_transforms)
-
-    @training_timer
-    def train_classifier(self, data_loaders, dataset_sizes, criterion, 
-            optimizer, scheduler, num_epochs=5):
-        device = 'cpu'
-        best_model_wts = copy.deepcopy(self.state_dict())
-        best_acc = 0.0
-
-        for epoch in range(num_epochs):
-            print('Epoch {}/{}'.format(epoch, num_epochs - 1))
-            print('-' * 10)
-
-            # Each epoch has a training and validation phase
-            for phase in ['train', 'val']:
-                if phase == 'train':
-                    self.train()  # Set model to training mode
-                else:
-                    self.eval()   # Set model to evaluate mode
-                running_loss = 0.0
-                running_corrects = 0
-
-                # Iterate over data.
-                for inputs, labels in data_loaders[phase]:
-                    inputs = inputs.to(device)
-                    labels = labels.to(device)
-
-                    # zero the parameter gradients
-                    optimizer.zero_grad()
-
-                    # forward
-                    # track history if only in train
-                    with torch.set_grad_enabled(phase == 'train'):
-                        outputs = self(inputs)
-                        _, preds = torch.max(outputs, 1)
-                        loss = criterion(outputs, labels)
-
-                        # backward + optimize only if in training phase
-                        if phase == 'train':
-                            loss.backward()
-                            optimizer.step()
-
-                    # statistics
-                    running_loss += loss.item() * inputs.size(0)
-                    running_corrects += torch.sum(preds == labels.data)
-
-                if phase == 'train':
-                    scheduler.step()
-
-                epoch_loss = running_loss / dataset_sizes[phase]
-                epoch_acc = running_corrects.double() / dataset_sizes[phase]
-
-                print('{} Loss: {:.4f} Acc: {:.4f}'.format(
-                    phase, epoch_loss, epoch_acc))
-
-                # deep copy the model
-                if phase == 'val' and epoch_acc > best_acc:
-                    best_acc = epoch_acc
-                    best_model_wts = copy.deepcopy(self.state_dict())
-
-            print()
-        print('Best val Acc: {:4f}'.format(best_acc))
-
-        # load best model weights
-        self.load_state_dict(best_model_wts)
-
-
-class MLP(NeuralNetClassifier):
+class MLP(nn.Module):
 
     def __init__(self, dims):
         super(MLP, self).__init__()
@@ -128,7 +31,7 @@ class MLP(NeuralNetClassifier):
         return F.softmax(self.linears[-1](x), dim=1)
 
 
-class CNN(NeuralNetClassifier):
+class CNN(nn.Module):
 
     def __init__(self, conv_dims, linear_dims, kernel_size):
         # TODO: need to come up with a smarter way of passing func args
@@ -142,7 +45,7 @@ class CNN(NeuralNetClassifier):
         for i in range(len(linear_dims)-1):
             linear = nn.Linear(linear_dims[i], linear_dims[i+1])
             self.linears.append(linear)
-        
+
     def forward(self, x):
         batch_size = x.shape[0]
         for i in range(len(self.convs)):
@@ -153,8 +56,95 @@ class CNN(NeuralNetClassifier):
             x = self.linears[i](x)
             x = F.relu(x)
         return F.softmax(self.linears[-1](x), dim=1)
-        
-        
+
+
+def existing_model(model_name, out_size, **kwargs):
+    kwargs_str = ''.join(f'{k}={v},' for k, v in kwargs.items())
+    model =  eval(f'models.{model_name}({kwargs_str})')
+    num_features = model.fc.in_features
+    model.fc = nn.Linear(num_features, out_size)
+    return model
+
+
+def data_loader(data_dir, batch_size, data_transform): 
+    dataset = datasets.ImageFolder(root=data_dir, transform=data_transform)
+    num_procs = multiprocessing.cpu_count() - 1
+    return DataLoader(dataset, batch_size, shuffle=True, 
+            num_workers=num_procs)
+
+
+def data_transform(**transforms_args):
+    data_transforms = []
+    for transform_name, kwargs in transform_args.items():
+        kwargs_str = ''.join(f'{k}={v},' for k, v in kwargs.items())
+        expr = f"transforms.{transform_name}({kwargs_str})"
+        data_transforms.append(eval(expr))
+    return transforms.Compose(data_transforms)
+
+
+def train_classifier(model, data_loaders, dataset_sizes, criterion, 
+        optimizer, scheduler, num_epochs=2): # TODO: need to change how we do params
+    device = 'cpu'
+    best_model_wts = copy.deepcopy(model.state_dict())
+    best_acc = 0.0
+
+    for epoch in range(num_epochs):
+        print('Epoch {}/{}'.format(epoch, num_epochs - 1))
+        print('-' * 10)
+
+        # Each epoch has a training and validation phase
+        for phase in ['train', 'val']:
+            if phase == 'train':
+                model.train()  # Set model to training mode
+            else:
+                model.eval()   # Set model to evaluate mode
+            running_loss = 0.0
+            running_corrects = 0
+
+            # Iterate over data.
+            for inputs, labels in data_loaders[phase]:
+                inputs = inputs.to(device)
+                labels = labels.to(device)
+
+                # zero the parameter gradients
+                optimizer.zero_grad()
+
+                # forward
+                # track history if only in train
+                with torch.set_grad_enabled(phase == 'train'):
+                    outputs = model(inputs)
+                    _, preds = torch.max(outputs, 1)
+                    loss = criterion(outputs, labels)
+
+                    # backward + optimize only if in training phase
+                    if phase == 'train':
+                        loss.backward()
+                        optimizer.step()
+
+                # statistics
+                running_loss += loss.item() * inputs.size(0)
+                running_corrects += torch.sum(preds == labels.data)
+
+            if phase == 'train':
+                scheduler.step()
+
+            epoch_loss = running_loss / dataset_sizes[phase]
+            epoch_acc = running_corrects.double() / dataset_sizes[phase]
+
+            print('{} Loss: {:.4f} Acc: {:.4f}'.format(
+                phase, epoch_loss, epoch_acc))
+
+            # deep copy the model
+            if phase == 'val' and epoch_acc > best_acc:
+                best_acc = epoch_acc
+                best_model_wts = copy.deepcopy(model.state_dict())
+
+        print()
+    print('Best val Acc: {:4f}'.format(best_acc))
+
+    # load best model weights
+    model.load_state_dict(best_model_wts)
+    return model
 
 
 if __name__== '__main__':
@@ -183,9 +173,10 @@ if __name__== '__main__':
     #exp_lr_scheduler = lr_scheduler.StepLR(optimizer, step_size=7, gamma=0.1)
     #criterion = nn.CrossEntropyLoss()
     # nn_model.train_classifier(data_loaders, criterion, optimizer, exp_lr_scheduler)
+    model_ft = existing_model('resnet18', 2, pretrained=True)
 
 
-    nn_model = MLP([784, 250, 100, 10])
+    nn_model = CNN([1, 6, 16], [256, 120, 84, 10], kernel_size=5)
     ROOT = '.data'
     train_data = datasets.MNIST(root = ROOT, train = True, download = True)
     mean = train_data.data.float().mean() / 255
@@ -244,7 +235,7 @@ if __name__== '__main__':
     #nn_model.train_mnist(train_iterator, optimizer, criterion)
 
     exp_lr_scheduler = lr_scheduler.StepLR(optimizer, step_size=7, gamma=0.1)
-    nn_model.train_classifier(data_loaders, dataset_sizes, criterion, optimizer, exp_lr_scheduler)
+    #train_classifier(nn_model, data_loaders, dataset_sizes, criterion, optimizer, exp_lr_scheduler)
 
 
 
