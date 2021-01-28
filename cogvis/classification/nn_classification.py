@@ -59,6 +59,7 @@ class CNN(nn.Module):
 
 def existing(model_name, num_classes, pretrained=False, feature_extract=False):
     model =  eval(f'models.{model_name}(pretrained={pretrained})')
+    _requires_grad(model, feature_extract)
     if 'resnet' in model_name:
         in_features = model.fc.in_features
         model.fc = nn.Linear(in_features, num_classes)
@@ -66,16 +67,16 @@ def existing(model_name, num_classes, pretrained=False, feature_extract=False):
         in_features = model.classifier[6].in_features
         model.classifier[6] = nn.Linear(in_features, num_classes)
     elif 'squeezenet' in model_name:
-        in_features = model.classifier[1].in_features
-        model.classifier[1] = nn.Conv2d(in_features, num_classes, 
+        in_channels = model.classifier[1].in_channels
+        model.classifier[1] = nn.Conv2d(in_channels, num_classes, 
                 kernel_size=(1,1), stride=(1,1))
     elif 'densenet' in model_name:
         in_features = model.classifier[1].in_features
         model.classifier = nn.Linear(in_features, num_classes)
     else:
         raise NotImplementedError(f'{model_name} not supported')
-    _requires_grad(model, feature_extract)
-    return model
+    params = [p for p in model.parameters() if p.requires_grad==True]
+    return model, params
 
 
 def _requires_grad(model, feature_extract):
@@ -197,9 +198,9 @@ if __name__ == '__main__':
     #nn_model = nn_classifier.MLP([150528, 250, 2])
     #nn_model = nn_classifier.CNN([3, 6, 16], [16 * 53 * 53, 120, 84, 2], conv_ks=5, pool_ks=2)
     #nn_model = nn_classifier.existing_model('resnet18', 2)
-    nn_model = existing('inception_v3', 5)
+    nn_model, params_to_update = existing('squeezenet1_1', 5)
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.SGD(nn_model.parameters(), lr=0.001, momentum=0.9)
+    optimizer = optim.SGD(params_to_update, lr=0.001, momentum=0.9)
     exp_lr_scheduler = lr_scheduler.StepLR(optimizer, step_size=7, gamma=0.1)
     nn_model = train(
             nn_model, 
@@ -208,7 +209,7 @@ if __name__ == '__main__':
             criterion, 
             optimizer,
             exp_lr_scheduler, 
-            num_epochs=1,
+            num_epochs=10,
             )
 
 
