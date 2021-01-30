@@ -2,6 +2,7 @@ import copy
 import functools
 import multiprocessing
 import time
+import warnings
 
 import h5py
 import numpy as np
@@ -17,9 +18,7 @@ from torch.utils.data import DataLoader
 
 class HDF5Dataset(utils.data.Dataset):
 
-    def __init__(self, filename, chunking=None, transform=None):
-        # TODO: chunking - instead of loading one image at a time.
-        # NOTE: shuffling will negate locality of reference (when chunking).
+    def __init__(self, filename, transform=None):
         super(HDF5Dataset, self).__init__()
         self.data = h5py.File(filename, 'r')
         self.classes, self.class_to_idx = self._find_classes(self.data)
@@ -123,17 +122,22 @@ def _requires_grad(model, feature_extract):
             param.requires_grad = False
 
 
-def data_loader(path, batch_size, shuffle=True, num_workers=0, 
+def data_loader(path, batch_size, chunking=False, shuffle=True, num_workers=0, 
         transform=None): 
     # NOTE: see PyTorch's documentation - some transforms work for only PIL 
     # images and some only numpy.ndarray
     if path.endswith('.hdf5'):
-        dataset = HDF5Dataset(path, transform=transform)
         if num_workers > 0:
-            msg = 'HDF5 dataset implementation does not support multi-threaded'\
-                    'data access. Try num_workers=0'
-            raise ValueError(msg)
+            raise ValueError('HDF5 dataset implementation does not support'\
+                    'multi-threaded data access. Try num_workers=0')
+        if chunking and shuffle:
+            warnings.warn('Shuffle negates the effect of chunking. Try '\ 
+                    'shuffle=False', RuntimeWarning)
+        dataset = HDF5Dataset(path, transform=transform)
     else:
+        if chunking:
+            warnings.warn('ImageFolder does not support chunking', 
+                    RuntimeWarning)
         dataset = datasets.ImageFolder(root=path, transform=transform)
     loader = DataLoader(dataset, batch_size, shuffle, num_workers=num_workers)
     return len(dataset), loader
@@ -263,6 +267,8 @@ if __name__ == '__main__':
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.SGD(params_to_update, lr=0.001, momentum=0.9)
     exp_lr_scheduler = lr_scheduler.StepLR(optimizer, step_size=7, gamma=0.1)
+
+    start = time.perf_counter()
     nn_model = train(
             nn_model, 
             train_loader, val_loader, 
@@ -270,8 +276,10 @@ if __name__ == '__main__':
             criterion, 
             optimizer,
             exp_lr_scheduler, 
-            num_epochs=10,
+            num_epochs=2,
             )
+    end = time.perf_counter()
+    print(f'Time: {end - start} s')
 
 
 
