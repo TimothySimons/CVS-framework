@@ -3,16 +3,54 @@ import functools
 import multiprocessing
 import time
 
+import h5py
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-import torch.utils.data as data
+import torch.utils as utils
 from torch.optim import lr_scheduler
 from torchvision import datasets, models, transforms
 from torch.utils.data import DataLoader
 
+
+class HDF5Dataset(utils.data.Dataset):
+
+    def __init__(self, filename, chunking=None, transform=None):
+        # TODO: chunking - instead of loading one image at a time.
+        # NOTE: shuffling will negate locality of reference (when chunking).
+        super(HDF5Dataset, self).__init__()
+        self.data = h5py.File(filename, 'r')
+        self.classes, self.class_to_idx = self._find_classes(self.data)
+        self.idx_to_sample_idx = self._idx_mapping(self.data)
+        self.transform = transform
+
+    def _find_classes(self, data):
+        classes = [cls_name for cls_name in data]
+        class_to_idx = {cls_name: idx for idx, cls_name in enumerate(classes)}
+        return classes, class_to_idx
+
+    def _idx_mapping(self, data):
+        sample_idxs = [] 
+        for class_name in data:
+            for sample_idx in range(len(data[class_name])):
+                sample_idxs.append((class_name, sample_idx))
+        idx_to_sample_idx = {idx: s for idx, s in enumerate(sample_idxs)}
+        return idx_to_sample_idx
+
+    def __len__(self):
+        return len(self.idx_to_sample_idx)
+
+    def __getitem__(self, idx):
+        sample_idx = self.idx_to_sample_idx[idx]
+        class_name, instance_idx = sample_idx 
+        instance = self.data[class_name][instance_idx]
+        target = self.class_to_idx[class_name]
+        if self.transform:
+            instance = self.transform(instance)
+        return instance, target 
+        
 
 class MLP(nn.Module):
 
@@ -85,18 +123,26 @@ def _requires_grad(model, feature_extract):
             param.requires_grad = False
 
 
-def data_loader(data_dir, batch_size, data_transform=None): 
-    dataset = datasets.ImageFolder(root=data_dir, transform=data_transform)
-    num_procs = multiprocessing.cpu_count() - 1
-    loader = DataLoader(dataset, batch_size, shuffle=True, 
-            num_workers=num_procs)
+def data_loader(path, batch_size, shuffle=True, num_workers=0, 
+        transform=None): 
+    # NOTE: see PyTorch's documentation - some transforms work for only PIL 
+    # images and some only numpy.ndarray
+    if path.endswith('.hdf5'):
+        dataset = HDF5Dataset(path, transform=transform)
+        if num_workers > 0:
+            msg = 'HDF5 dataset implementation does not support multi-threaded'\
+                    'data access. Try num_workers=0'
+            raise ValueError(msg)
+    else:
+        dataset = datasets.ImageFolder(root=path, transform=transform)
+    loader = DataLoader(dataset, batch_size, shuffle, num_workers=num_workers)
     return len(dataset), loader
 
 
 def data_transform(**kwargs):
     data_transforms = []
     for transform_name, args in kwargs.items():
-        expr = f"transforms.{transform_name}{args}"
+        expr = f'transforms.{transform_name}{args}'
         data_transforms.append(eval(expr))
     return transforms.Compose(data_transforms)
 
@@ -167,32 +213,47 @@ def epoch_eval(model, loader, size, criterion, device):
     return epoch_loss, epoch_acc
 
 
+#if __name__ == '__main__':
+#    dataset = HDF5Dataset('train.hdf5')
+#    print(dataset.__getitem__(7500))
+
+
 if __name__ == '__main__':
     train_dir = 'orchard_data/train/'
     val_dir = 'orchard_data/val/'
     test_dir = 'orchard_data/test/'
+
+    train_dir = 'train.hdf5'
+    val_dir = 'val.hdf5'
     # ----- 1 ----- #
     transform = data_transform(
-            Resize=(70,), 
-            CenterCrop=(64,),
             ToTensor=(),
             )
-    size, loader = data_loader(train_dir, 1000, transform)
+    #transform = data_transform(
+    #        Resize=(70,), 
+    #        CenterCrop=(64,),
+    #        ToTensor=(),
+    #        )
+    size, loader = data_loader(train_dir, 1000, transform=transform)
     data, _ = next(iter(loader))
     means = [data[:,c].mean().tolist() for c in range(len(data[0]))] 
     stds = [data[:,c].std().tolist() for c in range(len(data[0]))]
 
     # ----- 2 ----- #
-    batch_size = 4
+    batch_size = 32
     transform = data_transform(
-        Resize=(70,),
-        CenterCrop=(64,),
         ToTensor=(),
         Normalize=(means, stds),
         )
-    train_size, train_loader = data_loader(train_dir, batch_size, transform)
-    print(train_size)
-    val_size, val_loader = data_loader(val_dir, batch_size, transform)
+    #transform = data_transform(
+    #    Resize=(70,),
+    #    CenterCrop=(64,),
+    #    ToTensor=(),
+    #    Normalize=(means, stds),
+    #    )
+    train_size, train_loader = data_loader(train_dir, batch_size, 
+            transform=transform)
+    val_size, val_loader = data_loader(val_dir, batch_size, transform=transform)
 
     # ----- 3 ----- #   
     #nn_model = nn_classifier.MLP([150528, 250, 2])
