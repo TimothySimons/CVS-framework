@@ -1,6 +1,6 @@
 import copy
 import functools
-import multiprocessing
+import multiproessing
 import time
 import warnings
 
@@ -219,9 +219,12 @@ def epoch_eval(model, loader, size, criterion, device):
     return epoch_loss, epoch_acc
 
 
-#if __name__ == '__main__':
-#    dataset = HDF5Dataset('train.hdf5')
-#    print(dataset.__getitem__(7500))
+def evaluate(model, loader, size, criterion, device='cpu'):
+    device = torch.device('cuda:0' if device == 'gpu' else 'cpu')
+    model = model.to(device)
+    criterion = criterion.to(device)
+    loss, acc = epoch_eval(model, loader, size, criterion, device)
+    print(f'Loss: {loss:.4f} Acc: {acc:.4f}')
 
 
 if __name__ == '__main__':
@@ -229,8 +232,9 @@ if __name__ == '__main__':
     val_dir = 'orchard_data/val/'
     test_dir = 'orchard_data/test/'
 
-    train_dir = 'train.hdf5'
-    val_dir = 'val.hdf5'
+    train_dir = 'orchard_data_hdf5/train.hdf5'
+    val_dir = 'orchard_data_hdf5/val.hdf5'
+    test_dir = 'orchard_data_hdf5/test.hdf5'
     # ----- 1 ----- #
     transform = data_transform(
             ToTensor=(),
@@ -260,6 +264,7 @@ if __name__ == '__main__':
     train_size, train_loader = data_loader(train_dir, batch_size, 
             transform=transform)
     val_size, val_loader = data_loader(val_dir, batch_size, transform=transform)
+    test_size, test_loader = data_loader(test_dir, batch_size, transform=transform) 
 
     # ----- 3 ----- #   
     #nn_model = nn_classifier.MLP([150528, 250, 2])
@@ -282,6 +287,8 @@ if __name__ == '__main__':
             )
     end = time.perf_counter()
     print(f'Time: {end - start} s')
+
+    evaluate(nn_model, test_loader, size, criterion)
 
 
 
