@@ -1,6 +1,5 @@
 import copy
 import functools
-import multiproessing
 import time
 import warnings
 
@@ -226,72 +225,3 @@ def evaluate(model, loader, size, criterion, device='cpu'):
     loss, acc = epoch_eval(model, loader, size, criterion, device)
     print(f'Loss: {loss:.4f} Acc: {acc:.4f}')
 
-
-if __name__ == '__main__':
-    train_dir = 'orchard_data/train/'
-    val_dir = 'orchard_data/val/'
-    test_dir = 'orchard_data/test/'
-
-    train_dir = 'orchard_data_hdf5/train.hdf5'
-    val_dir = 'orchard_data_hdf5/val.hdf5'
-    test_dir = 'orchard_data_hdf5/test.hdf5'
-    # ----- 1 ----- #
-    transform = data_transform(
-            ToTensor=(),
-            )
-    #transform = data_transform(
-    #        Resize=(70,), 
-    #        CenterCrop=(64,),
-    #        ToTensor=(),
-    #        )
-    size, loader = data_loader(train_dir, 1000, transform=transform)
-    data, _ = next(iter(loader))
-    means = [data[:,c].mean().tolist() for c in range(len(data[0]))] 
-    stds = [data[:,c].std().tolist() for c in range(len(data[0]))]
-
-    # ----- 2 ----- #
-    batch_size = 32
-    transform = data_transform(
-        ToTensor=(),
-        Normalize=(means, stds),
-        )
-    #transform = data_transform(
-    #    Resize=(70,),
-    #    CenterCrop=(64,),
-    #    ToTensor=(),
-    #    Normalize=(means, stds),
-    #    )
-    train_size, train_loader = data_loader(train_dir, batch_size, 
-            transform=transform)
-    val_size, val_loader = data_loader(val_dir, batch_size, transform=transform)
-    test_size, test_loader = data_loader(test_dir, batch_size, transform=transform) 
-
-    # ----- 3 ----- #   
-    #nn_model = nn_classifier.MLP([150528, 250, 2])
-    #nn_model = nn_classifier.CNN([3, 6, 16], [16 * 53 * 53, 120, 84, 2], conv_ks=5, pool_ks=2)
-    #nn_model = nn_classifier.existing_model('resnet18', 2)
-    nn_model, params_to_update = existing('squeezenet1_1', 5)
-    criterion = nn.CrossEntropyLoss()
-    optimizer = optim.SGD(params_to_update, lr=0.001, momentum=0.9)
-    exp_lr_scheduler = lr_scheduler.StepLR(optimizer, step_size=7, gamma=0.1)
-
-    start = time.perf_counter()
-    nn_model = train(
-            nn_model, 
-            train_loader, val_loader, 
-            train_size, val_size, 
-            criterion, 
-            optimizer,
-            exp_lr_scheduler, 
-            num_epochs=2,
-            )
-    end = time.perf_counter()
-    print(f'Time: {end - start} s')
-
-    evaluate(nn_model, test_loader, size, criterion)
-
-
-
-
-
-    
