@@ -31,10 +31,11 @@ class HDF5Dataset(utils.data.Dataset):
         return classes, class_to_idx
 
     def _idx_mapping(self, data):
-        sample_idxs = [] 
+        sample_idxs = []
         for class_name in data:
             for sample_idx in range(len(data[class_name])):
                 sample_idxs.append((class_name, sample_idx))
+        sample_idxs.sort(key=lambda x: x[1]) # ensures locality of reference
         idx_to_sample_idx = {idx: s for idx, s in enumerate(sample_idxs)}
         return idx_to_sample_idx
 
@@ -124,20 +125,21 @@ def _requires_grad(model, feature_extract):
 
 def data_loader(path, batch_size, chunking=False, shuffle=True, num_workers=0, 
         transform=None): 
-    # NOTE: see PyTorch's documentation - some transforms work for only PIL 
-    # images and some only numpy.ndarray
+    # NOTE: see PyTorch's documentation:
+    # some transforms work for only PIL images and some only numpy.ndarray
     if path.endswith('.hdf5'):
         if num_workers > 0:
-            raise ValueError('HDF5 dataset implementation does not support'\
-                    'multi-threaded data access. Try num_workers=0')
+            msg = 'HDF5 dataset implementation does not support'\
+                    'multi-threaded data access. Try num_workers=0'
+            raise ValueError(msg)
         if chunking and shuffle:
-            warnings.warn('Shuffle negates the effect of chunking. Try '\ 
-                    'shuffle=False', RuntimeWarning)
+            msg = 'Shuffle negates the effect of chunking. Try shuffle=False'
+            warnings.warn(msg, RuntimeWarning)
         dataset = HDF5Dataset(path, transform=transform)
     else:
         if chunking:
-            warnings.warn('ImageFolder does not support chunking', 
-                    RuntimeWarning)
+            msg = 'ImageFolder does not support chunking. Try chunking=False'
+            warnings.warn(msg, RuntimeWarning)
         dataset = datasets.ImageFolder(root=path, transform=transform)
     loader = DataLoader(dataset, batch_size, shuffle, num_workers=num_workers)
     return len(dataset), loader
