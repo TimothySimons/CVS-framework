@@ -2,9 +2,9 @@
 ################
 __pycache__/
 # setup.py working directory
-build
 # sphinx build directory
-doc/_build
+doc/_build/
+doc/reference/api
 # setup.py dist directory
 dist
 # Egg metadata
@@ -12,7 +12,3 @@ dist
 .eggs
 .pypirc
 
-# Documentation generated files #
-#################################
-doc/_build
-doc/reference/api
