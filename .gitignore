@@ -1,0 +1,18 @@
+# Python files #
+################
+__pycache__/
+# setup.py working directory
+build
+# sphinx build directory
+doc/_build
+# setup.py dist directory
+dist
+# Egg metadata
+*.egg-info
+.eggs
+.pypirc
+
+# Documentation generated files #
+#################################
+doc/_build
+doc/reference/api
