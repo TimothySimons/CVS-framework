@@ -3,12 +3,16 @@
 __pycache__/
 # setup.py working directory
 # sphinx build directory
-doc/_build/
-doc/reference/api
+docs/_build/
+docs/reference/api
 # setup.py dist directory
 dist
 # Egg metadata
 *.egg-info
 .eggs
 .pypirc
+
+
+# Editor files #
+*.swp
 

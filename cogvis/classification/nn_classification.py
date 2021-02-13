@@ -294,6 +294,9 @@ def train(model, train_loader, val_loader, train_size, val_size, criterion,
     Trains and validates the model on the train and validation datasets using 
     the chosen criterion, optimizer and schedular.
 
+    The returned model contains the weights that produced the highest accuracy
+    on the validation dataset.
+
     :type model: torch.nn.Module object
     :param model: The model to be trained.
     :type train_loader: torch.util.data.DataLoader object
@@ -442,4 +445,42 @@ def evaluate(model, loader, size, criterion, device='cpu'):
     criterion = criterion.to(device)
     loss, acc = epoch_eval(model, loader, size, criterion, device)
     print(f'Loss: {loss:.4f} Acc: {acc:.4f}')
+
+
+def predict(model, inputs):
+    """
+    Returns model predictions and associated probability scores.
+    """
+    outputs = model(inputs)
+    _, preds = torch.max(outputs, 1)
+    softmax = nn.Softmax(dim=1)
+    probs = softmax(outputs).tolist()
+    preds = preds.tolist()
+    return preds, probs 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
