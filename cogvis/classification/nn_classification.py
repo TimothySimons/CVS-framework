@@ -206,6 +206,11 @@ def data_loader(path, batch_size, chunking=False, shuffle=True, num_workers=0,
         transform=None): 
     """Returns the size of the dataset and a DataLoader object.
 
+    .. note::
+        The ``class_to_idx`` dictionary can be accessed through the 
+        ``loader.dataset.class_to_idx`` attribute, where ``loader`` is an 
+        instantiated object.
+        
     :type path: str
     :param path:
         The path to the dataset. The path either points to a directory 
@@ -450,6 +455,16 @@ def evaluate(model, loader, size, criterion, device='cpu'):
 def predict(model, inputs):
     """
     Returns model predictions and associated probability scores.
+
+    :type model: torch.nn.Module object
+    :param model: 
+        The model used to make predictions.
+    :type inputs: torch.Tensor object
+    :param inputs: 
+        A set of inputs for the model to pass inference.
+
+    :returns:
+        A tuple containing predictions and probabilities for each input.
     """
     outputs = model(inputs)
     _, preds = torch.max(outputs, 1)
@@ -457,30 +472,5 @@ def predict(model, inputs):
     probs = softmax(outputs).tolist()
     preds = preds.tolist()
     return preds, probs 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 

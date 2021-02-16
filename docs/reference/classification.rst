@@ -27,6 +27,7 @@ classification
     epoch_train
     epoch_eval
     evaluate
+    predict
 
 
 .. TODO: figure out how to undoc inherited methods
