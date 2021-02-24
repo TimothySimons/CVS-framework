@@ -25,8 +25,8 @@ To see more examples (with explanatory text), find some notebooks [here](https:/
 ```python
 from cogvis.classification import nn_classification
 
-train_path = '/content/drive/My Drive/data/train/'
-val_path = '/content/drive/My Drive/data/val/'
+train_path = '/path/to/data/train/'
+val_path = '/path/to/data/val/'
 
 batch_size = 32
 train_transform = nn_classification.data_transform(
@@ -94,5 +94,5 @@ make html
 ```
 To view the documentation, navigate to the `_build/html` folder and open the `index.html` file in your browser of choice.
 
-> **NOTE:**  Try `make clean html` and then rebuild if newly added elements aren't showing.
+> **TIP:**  Try `make clean html` and then rebuild if newly added elements aren't showing.
 
