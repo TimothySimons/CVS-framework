@@ -16,8 +16,83 @@ The aim of the project is to build a CVS framework that assists developers in cr
 * The low-level component of the framework will cater to all manner of computer vision related tasks, from image classification and object detection to segmentation.
 * An example CVS might achieve scene understanding in video footage. In this case, the low-level component might include the detected/segmented objects and the high-level component would reason about these features to reach some conclusion about the observed scene. 
 
-Example Usage
+## Example Usage
 
-To see more elaborate examples, find some notebooks here.
+To see more examples (with explanatory text), find some notebooks [here](https://github.com/TimothySimons/CVS_framework/tree/master/notebooks).
 
+### Image Classification
+
+```python
+from cogvis.classification import nn_classification
+
+train_path = '/content/drive/My Drive/data/train/'
+val_path = '/content/drive/My Drive/data/val/'
+
+batch_size = 32
+train_transform = nn_classification.data_transform(
+    ColorJitter=(),
+    RandomHorizontalFlip=(), # only works with PIL images not HDF5
+    RandomPerspective=(),    # only works with PIL images not HDf5
+    ToTensor=(),
+    Normalize=(means, stds), # normalise with custom or calculated means and stds (one mean/std for each channel)
+)
+
+val_transform = nn_classification.data_transform(
+    ToTensor=(),
+    Normalize=(means, stds),
+) 
+
+train_size, train_loader = nn_classification.data_loader(train_path, batch_size, 
+                                                      transform=train_transform)
+
+val_size, val_loader = nn_classification.data_loader(val_path, batch_size, 
+                                                     transform=val_transform)
+                                                     
+criterion = nn.CrossEntropyLoss()
+nn_model, params = nn_classification.existing('resnet18', 10)
+optimizer = optim.SGD(params, lr=0.001, momentum=0.9)
+exp_lr_scheduler = lr_scheduler.StepLR(optimizer, step_size=7, gamma=0.1)
+
+nn_model = nn_classification.train(
+        nn_model, 
+        train_loader, val_loader, 
+        train_size, val_size, 
+        criterion, 
+        optimizer,
+        exp_lr_scheduler, 
+        num_epochs=10,
+        )
+        
+# ...
+
+preds, probs = nn_classification.predict(nn_model, inputs) # using some provided inputs
+```
+
+## Installation
+
+Currently, `cogvis` is not part of the Anaconda distribution or PyPI. You will need to build it from source.
+
+Navigate to the folder containing the `setup.py` project file and execute:
+
+```
+python -m pip install --upgrade build
+python -m build
+```
+You will then find a `.whl` file in the newly created `dist` folder.  You can install `cogvis` with a command akin to the following:
+```
+pip install cogvis-0.0.1-py3-none-any.whl
+```
+See [here](https://packaging.python.org/tutorials/packaging-projects/) for more information on packaging a Python project.
+
+## Documentation
+
+This Python project uses the [Sphinx autodoc tool](https://www.sphinx-doc.org/en/master/) with RST style doc strings. Take a look at this [Sphinx tutorial](https://sphinx-tutorial.readthedocs.io/) or this [cheat sheet](https://sphinx-tutorial.readthedocs.io/cheatsheet/).
+
+To build documentation, navigate to the docs folder and execute:
+```
+make html
+```
+To view the documentation, navigate to the `_build/html` folder and open the `index.html` file in your browser of choice.
+
+> **NOTE:**  Try `make clean html` and then rebuild if newly added elements aren't showing.
 
