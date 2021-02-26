@@ -104,7 +104,7 @@ Neural Nets:
 
 Bayesian Nets:
 * create Python interface to common BN C++ library (like dlib)  
-_and do the following if not provided by the C++ library_
+_and the following if not provided by the chosen C++ library_
 * d-separation
 * automatic learning
 * plate notation for BN instantiation
