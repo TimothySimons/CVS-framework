@@ -110,3 +110,6 @@ _and the following if not provided by the chosen C++ library_
 * plate notation for BN instantiation
 * variable elimination (with optimal ordering)
 
+Framework:
+* develop additional use cases to evaluate the usability and usefulness of the framework
+
